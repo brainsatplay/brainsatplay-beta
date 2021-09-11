@@ -51,21 +51,11 @@ export class Brainstorm {
 
                                 if (found == null) {
 
-                                    let _brainstormCallback = (user) => {
-                                        let sourceRegistry = this.session.graph.registry.local[sourceName]
-                                        console.log('_brainstormCallback', sourceRegistry)
-                                        if (sourceRegistry) {
-                                            sourceRegistry.registry[sourcePort].callbacks.forEach((f, i) => {
-                                                if (f instanceof Function) f(user)
-                                            })
-                                        }
-                                    }
-
                                     // Create Brainstorm Stream
                                     let subId1 = this.session.streamAppData(label, this.session.graph.registry.local[sourceName].registry[sourcePort].state, sessionId, () => { })
                                     this.props.subscriptions[label].push({ id: subId1, target: null })
 
-                                    this._addUserSubscription(this.session.info.auth.id, label, sessionId, _brainstormCallback, this.session.info.auth.username) // Subscribe to yourself
+                                    this._addUserSubscription(this.session.info.auth.id, label, sessionId, ()=>{}, this.session.info.auth.username) // Subscribe to yourself
 
                                     // Subscribe to each user as they are added to the session
                                     if (this.session.state.data[sessionId]){
@@ -86,7 +76,7 @@ export class Brainstorm {
                                             // Add Subscription to Each User in the Game
                                             if (sessionInfo.users){
                                                 Object.keys(sessionInfo.users).forEach(userId => {
-                                                    this._addUserSubscription(userId, label, sessionId, _brainstormCallback, sessionInfo.users[userId])
+                                                    this._addUserSubscription(userId, label, sessionId, ()=>{}, sessionInfo.users[userId])
                                                 })
                                             }
                                         })
@@ -110,9 +100,9 @@ export class Brainstorm {
 
     _addUserSubscription = (userId, label, sessionId, callback, username) => {
 
-        let _sendData = (userData) => {
-            let copy = this.session.graph.runSafe(this, label, userData)
-            callback(copy)
+        let _sendData = (user) => {
+            let res = this.session.graph.runSafe(this, label, user)
+            callback(res)
         }
 
         if (!(userId in this.props.users)) this.props.users[userId] = {}
@@ -128,7 +118,7 @@ export class Brainstorm {
             if (!('meta' in toPass)) toPass.meta = {}
 
             if (this.ports.onUserConnected.data instanceof Function) this.ports.onUserConnected.data(toPass)
-            if ('data' in toPass) _sendData(toPass) // NOTE: Might send twice
+            // if ('data' in toPass) _sendData(toPass) // NOTE: Might send twice
             this.props.users[userId].username = username
 
             this.props.users[userId][label] = this.session.state.subscribe(key, _sendData)

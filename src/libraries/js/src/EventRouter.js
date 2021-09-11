@@ -303,7 +303,7 @@ export class EventRouter{
                         blink.props.container.style.right = 0
                     }
                     this.device.atlas.graph.updateParams(blink, {debug: true})
-                    container.insertAdjacentElement('beforeend', blink.props.container)
+                    if (container) container.insertAdjacentElement('beforeend', blink.ports.element.data)
                 }
 
             }

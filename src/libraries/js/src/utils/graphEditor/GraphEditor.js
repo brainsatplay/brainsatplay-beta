@@ -626,6 +626,7 @@ export class GraphEditor{
                 // },
             }
 
+            let inputDict = {}
             Object.keys(dummySettings).forEach(key => {
                 if (settings[key] == null) settings[key] = dummySettings[key]
                 toParse[key] = {data: settings[key]}
@@ -647,10 +648,15 @@ export class GraphEditor{
                 let includeButDontShow = ['display', 'version']
                  
                 if (!includeButDontShow.includes(key)){
-                    let inputContainer = this.createInput(toParse, key)
-                    if (inputContainer) settingsContainer.insertAdjacentElement('beforeend', inputContainer)
+                    let {container, input} = this.createInput(toParse, key)
+                    if (container) {
+                        settingsContainer.insertAdjacentElement('beforeend', container)
+                        inputDict[key] = input
+                    }
                 }
             })
+
+            this.subscribeToChanges(inputDict,toParse, 'settings')
 
             delete this.state.data[`activeSettingsFile`]
             this.state.addToState(`activeSettingsFile`, settings, () => {
@@ -674,7 +680,7 @@ export class GraphEditor{
                 setTimeout(() => {
 
                 this.responsive()
-                this.app.session.graph._resizeAllNodeFragments(this.app.props.id)
+                this.manager._resizeAllNodeFragments(this.app.props.id)
                 },100)
             } else {
                 this.element.node.style.opacity = 0
@@ -684,7 +690,7 @@ export class GraphEditor{
                 this.app.AppletHTML.parentNode.appendChild(this.appNode)
                 setTimeout(() => {
                     this.responsive()
-                    this.app.session.graph._resizeAllNodeFragments(this.app.props.id)
+                    this.manager._resizeAllNodeFragments(this.app.props.id)
                 },100)
             }
         }
@@ -926,16 +932,19 @@ export class GraphEditor{
             let selectedParams = document.getElementById(`${this.props.id}params`)
             selectedParams.innerHTML = ''
             let plugin = node.nodeInfo.instance
-
-            // FIX
-            // let toParse = plugin.paramOptions
-            // if (toParse == null) 
             let toParse = plugin.ports
 
+
+            let inputDict = {}
             for (let key in toParse){
-                let inputContainer = this.createInput(plugin.ports, key, plugin)
-                if (inputContainer) selectedParams.insertAdjacentElement('beforeend', inputContainer)
+                let {container, input} = this.createInput(plugin.ports, key, plugin)
+                if (container) {
+                    inputDict[key] = input
+                    selectedParams.insertAdjacentElement('beforeend', container)
+                }
             }
+
+            this.subscribeToChanges(inputDict,toParse, 'ports', plugin)
 
 
             // Edit and Delete Buttons
@@ -957,16 +966,20 @@ export class GraphEditor{
     createInput(toParse, key, plugin){
 
         // Properly Nest Divs
-        let containerDiv = document.createElement('div')
-        containerDiv.insertAdjacentHTML('beforeend',`<div><p>${key}</p></div>`)
+        let container = document.createElement('div')
+        container.insertAdjacentHTML('beforeend',`<div><p>${key}</p></div>`)
         let inputContainer = document.createElement('div')
         inputContainer.style.position = 'relative'
 
         // Sort through Params
         if (toParse[key].edit != false){
 
-            let defaultType = toParse[key].input?.type ?? typeof toParse[key].data
-            if (typeof defaultType !== 'string' && defaultType.name) defaultType = defaultType.name
+            let defaultType
+            if (toParse[key].output?.type === null) defaultType = toParse[key].input?.type // Input if output is null
+            else if (toParse[key].output?.type === undefined) defaultType = typeof toParse[key].data // Data type if output is undefined
+            else defaultType = toParse[key].output?.type // Otherwise specified output type
+
+            if (typeof defaultType !== 'string' && defaultType?.name) defaultType = defaultType.name
 
             let specifiedOptions = toParse[key].options
             let optionsType = typeof specifiedOptions
@@ -1096,9 +1109,10 @@ export class GraphEditor{
                 }
     
                 settings.onSave = (res) => {
-                    if (defaultType === 'Function') res = res[key]
-                   if (plugin) this.manager.runSafe(plugin, key, res)
-                   this.app.session.graph._resizeAllNodeFragments(this.app.props.id)
+                    // if (defaultType === 'Function') res = res[key]
+                    // plugin.ports[key].data
+                    if (plugin) this.setPort(plugin, key, res)
+                   this.manager._resizeAllNodeFragments(this.app.props.id)
                 }
     
                 settings.onClose = (res) => {
@@ -1197,81 +1211,107 @@ export class GraphEditor{
 
             // Add to Document
                 inputContainer.insertAdjacentElement('beforeend',input)
-                containerDiv.insertAdjacentElement('beforeend',inputContainer)
-                containerDiv.classList.add(`content-div`)                
+                container.insertAdjacentElement('beforeend',inputContainer)
+                container.classList.add(`content-div`)                
 
-                // Change Live Params with Input Changes
-                let changeFunc = (e) => {
-
-                    if (this.elementTypesToUpdate.includes(input.tagName)){
-                        if (input.tagName === 'TEXTAREA') {
-                            try{
-                                toParse[key].data = JSON.parse(input.value)
-                            } catch (e) {console.warn('JSON not parseable', e)}
-                        }
-                        else if (input.type === 'checkbox') toParse[key].data = input.checked
-                        else if (input.type === 'file') toParse[key].data = input.files;
-                        else if (['number','range'].includes(input.type)) {
-                            let possibleUpdate = Number.parseFloat(input.value)
-
-                            if (!isNaN(possibleUpdate)) toParse[key].data = possibleUpdate
-                            else return
-
-                            if (input.type === 'range') {
-                                input.parentNode.querySelector('output').innerHTML = input.value
-                            }
-                            // console.log(toParse[key].data)
-                        }
-                        else toParse[key].data = input.value
-
-                        toParse[key].forceUpdate = true
-                        if (plugin && toParse[key] && toParse[key].onUpdate instanceof Function) this.app.session.graph.runSafe(plugin,key, toParse[key])
-                        if (!['number','range', 'text', 'color'].includes(input.type) && input.tagName !== 'TEXTAREA') input.blur()
-                    }
+                input.oninput = (e) => {
+                    this.updatePortFromGUI(input, plugin, key, toParse)
                 }
+                return {container, input}
+            } else return {}
+        } else return {}
+    }
 
-                input.oninput = changeFunc
-
-                // Listen for Non-GUI Changes to Params when Viewing
-                delete this.state.data[`activeGUINode`]
-
-                if (defaultType !== 'object'){ // Don't Listen to Objects Changed with a Port
-                    this.state.addToState(`activeGUINode`, toParse, () => {
-
-                        let oldValue
-                        let newValue
-                        if (this.elementTypesToUpdate.includes(input.tagName) && input.type != 'file'){
-                            if (input.type === 'checkbox') {
-                                oldValue = input.checked
-                                input.checked = toParse[key].data
-                                newValue = input.checked
-                            }
-                            else {
-                                oldValue = input.value
-
-                                if (toParse[key].data != null){ // FIX
-                                    input.value = toParse[key].data
-
-                                    if (input.tagName === 'TEXTAREA') {
-                                        newValue = JSON.stringify(input.value, null, '\t')
-                                    }
-                                    else newValue = input.value
-                                }
-                            }
-                        }
-                        
-                        if (oldValue != newValue) {
-                            changeFunc()
-                            if (this.files['Graph Editor'].tab) this.files['Graph Editor'].tab.classList.add('edited')
-                        }
-                    })
-                }
-                return containerDiv
+    subscribeToChanges(inputDict, toParse, label='', plugin) {
+        // Listen for Non-GUI Changes to Params when Viewing
+        Object.keys(this.state.data).forEach(k => {
+            if (k.includes(`GUI${label}_`)){
+                delete this.state.data[k]
             }
+        })
+
+        let keys = Object.keys(toParse)
+
+        keys.forEach(key => {
+            this.state.addToState(`GUI${label}_${key}`, toParse[key], () => {
+
+                let oldValue
+                let newValue
+                    
+                    let input = inputDict[key]
+
+                    // Filter for Displayable Inputs
+                    if (input && this.elementTypesToUpdate.includes(input.tagName) && input.type != 'file'){
+                        if (input.type === 'checkbox') {
+                            oldValue = input.checked
+                            input.checked = toParse[key].data
+                            newValue = input.checked
+                        }
+                        else {
+                            oldValue = input.value
+
+                            if (toParse[key].data != null){ // FIX
+                                input.value = toParse[key].data
+
+                                if (input.tagName === 'TEXTAREA') {
+                                    newValue = JSON.stringify(input.value, null, '\t')
+                                }
+                                else newValue = input.value
+                            }
+                        }
+                    }
+                    
+                    if (oldValue != newValue) {
+                        if (plugin) this.updatePortFromGUI(input, plugin, key, toParse)
+                        if (this.files['Graph Editor'].tab) this.files['Graph Editor'].tab.classList.add('edited')
+                    }
+            })
+        })
+    }
+
+    // Change the INTERNAL Params (running through port and setting output manually)
+    updatePortFromGUI(input, plugin, key, toParse) {
+
+        if (this.elementTypesToUpdate.includes(input.tagName)){
+            if (input.tagName === 'TEXTAREA') {
+                try{
+                    toParse[key].data = JSON.parse(input.value)
+                } catch (e) {console.warn('JSON not parseable', e)}
+            }
+            else if (input.type === 'checkbox') toParse[key].data = input.checked
+            else if (input.type === 'file') toParse[key].data = input.files;
+            else if (['number','range'].includes(input.type)) {
+                let possibleUpdate = Number.parseFloat(input.value)
+
+                if (!isNaN(possibleUpdate)) toParse[key].data = possibleUpdate
+                else return
+
+                if (input.type === 'range') {
+                    input.parentNode.querySelector('output').innerHTML = input.value
+                }
+            }
+            else toParse[key].data = input.value
+            
+           this.setPort(plugin,key,toParse)
+            if (!['number','range', 'text', 'color'].includes(input.type) && input.tagName !== 'TEXTAREA') input.blur()
         }
     }
 
-    listenForInputs
+    setPort(plugin, key, toParse){
+
+        let toPass = Object.assign({forceUpdate: true}, toParse[key])
+        if (plugin && toParse[key] && toParse[key].onUpdate instanceof Function){
+            try {
+                let res = plugin.ports[key].onUpdate(toParse[key]) // Run through the port without propagating the actual output state
+                if(!res.data) throw ('Asynchronous exception');
+            } catch (e) {
+                // console.log(e)
+            }
+            this.manager.setPort(plugin,key, toPass) // Set port state with the desired output
+        } else {
+            this.manager.setPort(plugin,key, toPass) // Set port state with the desired output
+        }
+    }
 
     createFile(target, name){
         if (name == null || name === '') name = `${target.name}`
@@ -1645,7 +1685,7 @@ export class GraphEditor{
 
                 // Add Instance Details to Plugin Registry
                 let types = new Set()
-                let ports = this.app.session.graph.getPortsFromClass({class:classInfo})
+                let ports = this.manager.getPortsFromClass({class:classInfo})
                 for(let port in ports){
                     let type = ports[port]?.input?.type
                     if (type instanceof Object) types.add(type.name)

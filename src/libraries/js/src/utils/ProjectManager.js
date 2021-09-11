@@ -54,6 +54,8 @@ export class ProjectManager {
 
     getLibraryVersion = async (version='experimental') => {
 
+        if (version != 'experimental' && Number.parseInt(version.split('.')[2]) < 33) version = 'experimental' // FIX: Any lower versions are not supported
+
         return new Promise(resolve => {
             if (this.libraries[version] == null){
                 this.script.src = `https://cdn.jsdelivr.net/npm/brainsatplay@${version}`

@@ -125,6 +125,7 @@ export class UI{
                         removedIds.delete(node.id) // Actually still there
 
                         this.session.graph.addPort(this,node.id, {
+                            edit: false,
                             input: {type: undefined},
                             output: {type: null},
                             onUpdate: (user) => {

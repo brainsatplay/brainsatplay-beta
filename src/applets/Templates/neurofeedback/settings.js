@@ -28,7 +28,6 @@ export const settings = {
 
           onUserConnected: (u) => {
             let parser = settings.graph.nodes.find(n => n.id === 'parser')
-            console.log('ONUSERCONNECTED',u)
             parser.instance._userAdded(u)
           },
       

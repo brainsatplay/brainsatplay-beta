@@ -779,13 +779,11 @@ export class Session {
 			if(sessionId) {
 				if(!this.state.data[sessionId]) this.state.data[sessionId] = {id:sessionId, userData:{id:this.info.auth.id}};
 				if (this.state.data[sessionId].userData){
-					let found = this.state.data[sessionId].userData.find((o)=>{
-						if(o.id === this.info.auth.id) {
-							o[id] = newData; 
-							return true;
-						}
-					});
-					if(!found) this.state.data[sessionId].userData.push({id:this.info.auth.id, [id]:newData});
+					let o = this.state.data[sessionId].userData
+					if(o.id === this.info.auth.id) {
+						o[id] = newData; 
+						return true;
+					} else this.state.data[sessionId].userData.push({id:this.info.auth.id, [id]:newData});
 				}
 			}
 		});

@@ -14,28 +14,33 @@ x.y = 2;
 
 */
 
-//By Joshua Brewster (MIT)
+//By Joshua Brewster (MIT License)
 
 //Create instance and then call instance.addListener(listenerName,objectToListenTo,propToListenTo,onchange,interval).
 //name, propToListenTo, onchange, and interval are optional (leave or set as undefined). Onchange is a custom callback just like for other event listeners. Set a name to make it easier to start and stop or edit each listener.
 export class ObjectListener {
-    constructor(debug=false) {
+    constructor(debug=false, synchronous=false) {
         this.debug = debug;
         this.listeners = [];
+        this.synchronous = synchronous;//check all listeners simulatenously instead of on individual loops. use startSync() to trigger
+        this.syncInterval = 'FRAMERATE'; //interval
+        this.syncAnim = undefined;
+        if(synchronous === true) this.startSync();
     }
 
     //add a new object listener with specified props (or none to watch the whole object), and onchange functions, with optional interval
-    addListener(listenerKey=null,objectToListenTo,propToListenTo=undefined,onchange=undefined,interval=undefined,debug=this.debug) {
+    addListener(listenerKey=null,objectToListenTo,propToListenTo=undefined,onchange=undefined,interval=undefined,debug=this.debug,startRunning=true) {
         if(objectToListenTo === undefined) {
             console.error("You must assign an object");
             return;
         }
 
         var key = listenerKey;
-        if(key === null) {
+        if(key == null) {
             key = Math.floor(Math.random()*100000);
         }
-        var listener = {key:key, listener: new ObjectListenerInstance(objectToListenTo,propToListenTo,onchange,interval,debug)};
+        if(this.synchronous === true) startRunning = false; //negate this in case of synchronous runtime
+        var listener = {key:key, listener: new ObjectListenerInstance(objectToListenTo,propToListenTo,onchange,interval,debug,startRunning)};
         this.listeners.push(listener);
     }
 
@@ -65,7 +70,7 @@ export class ObjectListener {
     }
 
     onchange(key=null,newCallback=null){
-        if(key === null) {
+        if(key == null) {
             this.listeners.forEach((obj,i) => {
                 obj.listener.onchange = newCallback;
             });
@@ -83,7 +88,7 @@ export class ObjectListener {
     addFunc = (key=null,newCallback=null, start=true) => {
         var callbackIdx = null;
         if(newCallback !== null){
-            if(key === null) {
+            if(key == null) {
                 this.listeners.forEach((obj,i) => {
                     callbackIdx = obj.listener.addFunc(newCallback);
                     if(obj.listener.running == false && start == true)
@@ -117,7 +122,7 @@ export class ObjectListener {
 
     //Remove extra onchange functions
     removeFuncs = (key = null, idx = null, stop=false) => {
-        if(key === null) {
+        if(key == null) {
             this.listeners.forEach((obj,i) => {
                 obj.listener.removeFuncs(idx);
             });
@@ -136,7 +141,8 @@ export class ObjectListener {
 
     //Stop all or named listeners
     stop(key=null) {
-        if(key === null) {
+        if(this.synchronous) this.stopSync();
+        if(key == null) {
             this.listeners.forEach((obj,i) => {
                 obj.listener.stop();
             });
@@ -152,7 +158,8 @@ export class ObjectListener {
 
     //Restart all or named listeners
     start(key=null) {
-        if(key === null) {
+        if(this.synchronous) this.stopSync();
+        if(key == null) {
             this.listeners.forEach((obj,i) => {
                 obj.listener.start();
             });
@@ -166,8 +173,35 @@ export class ObjectListener {
         }
     }
 
+    //run listeners synchronously instead of on their own individual loops
+    startSync() {
+        if(this.synchronous === false) {
+            this.synchronous = true;
+            this.stop(); //stop the async calls
+            let runChecks = () => {
+                if(this.synchronous === true) {
+                    this.listeners.forEach((l)=>{
+                        l.listener.check();
+                    });
+                    if(this.syncInterval === 'FRAMERATE') {
+                        this.syncAnim = requestAnimationFrame(runChecks);
+                    } else if (typeof this.syncInterval === 'number') {
+                        setTimeout(runChecks, this.syncInterval);
+                    }
+                }
+            }
+            runChecks();
+        }
+    }
+
+    //stop the synchronous checking
+    stopSync() {
+        this.synchronous = false;
+        if(this.syncAnim) cancelAnimationFrame(this.syncAnim);
+    }   
+
     remove(key=null){
-        if(key === null) {
+        if(key == null) {
             this.listeners.forEach((listener) => {
                 listener.stop();
             });
@@ -190,7 +224,7 @@ export class ObjectListener {
 
 //Instance of an object listener. This will subscribe to object properties (or whole objects) and run attached functions when a change is detected.
 export class ObjectListenerInstance {
-    constructor(object,propName="__ANY__",onchange=this.onchange,interval="FRAMERATE",debug=false) {
+    constructor(object,propName="__ANY__",onchange=this.onchange,interval="FRAMERATE",debug=false,startRunning=true) {
         this.debug=debug;
 
         this.onchange = onchange; //Main onchange function
@@ -201,7 +235,7 @@ export class ObjectListenerInstance {
         this.propOld = undefined;
         this.setListenerRef(propName);
 
-        this.running = true;
+        this.running = startRunning;
         this.funcs = 0;
 
         this.interval;
@@ -211,10 +245,12 @@ export class ObjectListenerInstance {
             this.interval = interval;
         }
 
-        if (typeof window === 'undefined') {
-            setTimeout(()=>{this.check();}, 60)
-        } else {
-            this.checker = requestAnimationFrame(this.check);
+        if(startRunning === true) {
+            if (typeof window === 'undefined') {
+                setTimeout(()=>{this.check();}, 60)
+            } else {
+                this.checker = requestAnimationFrame(this.check);
+            }
         }
     }
 
@@ -276,12 +312,14 @@ export class ObjectListenerInstance {
     }
 
     check = () => {
+        let changed = false;
         if(this.propName === "__ANY__" || this.propName === null || this.propName === undefined){
             if(this.propOld !== JSON.stringifyFast(this.object)){
                 if(this.debug === true) { console.log("onchange: ", this.onchange); }
                 this.onchange(this.object);
                 if(this.onchangeFuncs.length > 0) { this.onchangeMulti(this.object); }
                 this.setListenerRef(this.propName);
+                changed = true;
             }
         }
         else if(Array.isArray(this.object[this.propName])) { //cut arrays down for speed
@@ -290,6 +328,7 @@ export class ObjectListenerInstance {
                 this.onchange(this.object[this.propName]);
                 if(this.onchangeFuncs.length > 0) { this.onchangeMulti(this.object[this.propName]); }
                 this.setListenerRef(this.propName);
+                changed = true;
             }
         }
         else if(typeof this.object[this.propName] === "object") {
@@ -301,6 +340,7 @@ export class ObjectListenerInstance {
                     this.onchangeMulti(this.object[this.propName]); 
                 }
                 this.setListenerRef(this.propName);
+                changed = true;
             }
         }
         else if(typeof this.object[this.propName] === "function") {
@@ -309,6 +349,7 @@ export class ObjectListenerInstance {
                 this.onchange(this.object[this.propName].toString());
                 if(this.onchangeFuncs.length > 0) { this.onchangeMulti(this.object[this.propName].toString()); }
                 this.setListenerRef(this.propName);
+                changed = true;
             }
         }
         else if(this.object[this.propName] !== this.propOld) {
@@ -316,6 +357,7 @@ export class ObjectListenerInstance {
             this.onchange(this.object[this.propName]);
             if(this.onchangeFuncs.length > 0) { this.onchangeMulti(this.object[this.propName]); }
             this.setListenerRef(this.propName);
+            changed = true;
         }
         
         if(this.running === true) {
@@ -331,6 +373,8 @@ export class ObjectListenerInstance {
                 setTimeout(()=>{this.check();},this.interval);
             }
         };
+
+        return changed;
     }
 
     start() {
@@ -448,16 +492,14 @@ if(JSON.stringifyFast === undefined) {
                 } else {
                     while (idx-- >= 0) {
                     prev = parents[idx];
-                    if (prev){
-                        if (prev[key] === value) {
-                            idx += 2;
-                            parents.length = idx;
-                            path.length = idx;
-                            --idx;
-                            parents[idx] = value;
-                            path[idx] = key;
-                            break;
-                        }
+                    if (prev[key] === value) {
+                        idx += 2;
+                        parents.length = idx;
+                        path.length = idx;
+                        --idx;
+                        parents[idx] = value;
+                        path[idx] = key;
+                        break;
                     }
                     }
                 }
@@ -469,7 +511,7 @@ if(JSON.stringifyFast === undefined) {
             if (value != null) {
                 if (typeof value === "object") {
                     //if (key) { updateParents(key, value); }
-                    let c = value.constructor?.name;
+                    let c = value.constructor.name;
                     if (key && c === 'Object') {updateParents(key, value); }
 
                     let other = refs.get(value);
@@ -501,7 +543,7 @@ if(JSON.stringifyFast === undefined) {
                                     obj[prop] = value[prop].slice(value[prop].length-20); 
                                 else obj[prop] = value[prop];
                             } //deal with arrays in nested objects (e.g. means, slices)
-                            else if (value[prop].constructor?.name === 'Object') { //additional layer of recursion for 3 object-deep array checks
+                            else if (value[prop].constructor.name === 'Object') { //additional layer of recursion for 3 object-deep array checks
                                 obj[prop] = {};
                                 for(const p in value[prop]) {
                                     if(Array.isArray(value[prop][p])) {
@@ -511,8 +553,8 @@ if(JSON.stringifyFast === undefined) {
                                     }
                                     else { 
                                         if (value[prop][p] != null){
-                                            let con = value[prop][p].constructor?.name;
-                                            if (con && con.includes("Set")) {
+                                            let con = value[prop][p].constructor.name;
+                                            if (con.includes("Set")) {
                                                 obj[prop][p] = Array.from(value[prop][p])
                                             } else if(con !== "Number" && con !== "String" && con !== "Boolean") {
                                                 obj[prop][p] = "instanceof_"+con; //3-deep nested objects are cut off
@@ -526,7 +568,7 @@ if(JSON.stringifyFast === undefined) {
                                 }
                             }
                             else { 
-                                let con = value[prop].constructor?.name;
+                                let con = value[prop].constructor.name;
                                 if (con.includes("Set")) {
                                     obj[prop] = Array.from(value[prop])
                                 } else if(con !== "Number" && con !== "String" && con !== "Boolean") {
@@ -588,16 +630,14 @@ if(JSON.stringifyWithCircularRefs === undefined) {
         } else {
             while (idx-- >= 0) {
             prev = parents[idx];
-            if (prev){
-                if (prev[key] === value) {
-                    idx += 2;
-                    parents.length = idx;
-                    path.length = idx;
-                    --idx;
-                    parents[idx] = value;
-                    path[idx] = key;
-                    break;
-                }
+            if (prev[key] === value) {
+                idx += 2;
+                parents.length = idx;
+                path.length = idx;
+                --idx;
+                parents[idx] = value;
+                path[idx] = key;
+                break;
             }
             }
         }

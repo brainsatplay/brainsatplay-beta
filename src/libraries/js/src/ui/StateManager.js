@@ -1,18 +1,20 @@
 import {ObjectListener} from './ObjectListener'
 
-//By Joshua Brewster (MIT)
+//By Joshua Brewster (MIT License)
 //Simple state manager.
 //Set key responses to have functions fire when keyed values change
 //add variables to state with addToState(key, value, keyonchange (optional))
 export class StateManager {
-    constructor(init = {}, interval="FRAMERATE") { //Default interval is at the browser framerate
+    constructor(init = {}, interval="FRAMERATE", defaultKeyEventLoop=true) { //Default interval is at the browser framerate
         this.data = init;
         this.interval = interval;
         this.pushToState={};
         this.pushRecord={pushed:[]}; //all setStates between frames
         this.pushCallbacks = {};
+        this.triggers = {};
 
         this.listener = new ObjectListener();
+        this.defaultStartListenerEventLoop = defaultKeyEventLoop;
 
         /*
         this.prev = Object.assign({},this.data);
@@ -67,7 +69,7 @@ export class StateManager {
                     //Object.assign(this.prev,this.data);//Temp fix until the global state listener function works as expected
                     Object.assign(this.data,this.pushToState);
 
-                    // console.log("new state: ", this.data); console.log("props set: ", this.pushToState);
+                    //console.log("new state: ", this.data); console.log("props set: ", this.pushToState);
                     for (const prop of Object.getOwnPropertyNames(this.pushToState)) {
                         delete this.pushToState[prop];
                     }
@@ -82,7 +84,8 @@ export class StateManager {
                 this.interval
             );
 
-            let clearRecord = (record) => {
+            this.addToState('pushRecord',this.pushRecord,(record)=>{
+
                 let l = record.pushed.length;
                 for (let i = 0; i < l; i++){
                     let updateObj = record.pushed[i];
@@ -95,11 +98,6 @@ export class StateManager {
                     }
                 }
                 this.pushRecord.pushed.splice(0,l);
-                if (this.pushRecord.pushed.length != 0) clearRecord(this.pushRecord)
-            }
-
-            this.addToState('pushRecord',this.pushRecord,(record)=>{
-                clearRecord(record) // executes until fully cleared
             });
 
             this.data.pushCallbacks = this.pushCallbacks;
@@ -108,7 +106,7 @@ export class StateManager {
     }
 
     //Alternatively just add to the state by doing this.state[key] = value with the state manager instance
-    addToState(key, value, onchange=null, debug=false) {
+    addToState(key, value, onchange=null, startRunning=this.defaultStartListenerEventLoop, debug=false) {
         if(!this.listener.hasKey('pushToState')) {
             this.setupSynchronousUpdates();
         }
@@ -119,7 +117,7 @@ export class StateManager {
         this.setSequentialState({stateAdded: key})
 
         if(onchange !== null){
-            return this.addSecondaryKeyResponse(key,onchange,debug);
+            return this.addSecondaryKeyResponse(key,onchange,debug,startRunning);
         }
     }
 
@@ -127,15 +125,14 @@ export class StateManager {
         return JSON.parse(JSON.stringifyFast(this.data));
     }
 
-    //Synchronous set-state, only updates main state on interval. Can append arrays instead of replacing them
-    setState(updateObj={},appendArrs=true){ //Pass object with keys in. Undefined keys in state will be added automatically. State only notifies of change based on update interval
+    //Synchronous set-state, only updates main state on interval. Can set to trigger now instead of waiting on interval. Also can append arrays in state instead of replacing them
+    setState(updateObj={}, appendArrs=false){ //Pass object with keys in. Undefined keys in state will be added automatically. State only notifies of change based on update interval
         //console.log("setting state");
         if(!this.listener.hasKey('pushToState')) {
             this.setupSynchronousUpdates();
         }
 
         updateObj.stateUpdateTimeStamp = Date.now();
-
         this.pushRecord.pushed.push(JSON.parse(JSON.stringifyWithCircularRefs(updateObj)));
         
         if(appendArrs) {
@@ -175,7 +172,55 @@ export class StateManager {
         }
 
         Object.assign(this.pushToState,updateObj);
+
         return this.pushToState;
+    }
+
+    //setState but also run triggers, allows subscribing to the same key in state without interrupting anything
+    setState_T(updateObj={}) {
+        
+        Object.assign(this.pushToState,updateObj); //also copy the data for the event listener loop
+
+        if(Object.keys(this.pushToState).length > 0) {
+            Object.assign(this.data,this.pushToState);
+            for (const prop of Object.getOwnPropertyNames(updateObj)) {
+                if(this.triggers[key]) {
+                    this.triggers[key].forEach((obj)=>{
+                        obj.onchange(updateObj[key]);
+                    });
+                }
+                delete this.pushToState[prop];
+            }
+        }
+
+        return this.pushToState;
+    }
+
+    //Trigger-only functions on otherwise looping listeners
+    subscribeTrigger(key=undefined,onchange=(prop)=>{}) {
+        if(key) {
+            if(!this.triggers[key]) {
+                this.triggers[key] = [];
+            }
+            this.triggers[key].push({idx:this.triggers[key].length-1, onchange:onchange});
+            return this.triggers[key].length-1;
+        } else return undefined;
+    }
+
+    //Delete specific trigger functions for a key
+    unsubscribeTrigger(key=undefined,sub=0) {
+        let idx = undefined;
+        let obj = this.triggers[key].find((o)=>{
+            if(o.idx===sub) {return true;}
+        });
+        if(obj) this.triggers[key].splice(idx,1);
+    }
+
+    //Remove all triggers for a key
+    unsubscribeAllTriggers(key) {
+        if(key && this.triggers[key]) {
+            delete this.triggers[key];
+        }
     }
 
     //only push to an object that keeps the sequences of updates instead of synchronously updating the whole state.
@@ -190,6 +235,7 @@ export class StateManager {
 
     subscribeSequential(key=undefined,onchange=undefined) {
         if(key) {
+            
             if(this.data[key] === undefined) {this.addToState(key,null,undefined);}
 
             if(!this.pushCallbacks[key])
@@ -204,11 +250,11 @@ export class StateManager {
         } else return undefined;
     }
 
-    unsubscribeSequential(key=undefined,idx=0) {
+    unsubscribeSequential(key=undefined,sub=0) {
         if(key){
             if(this.pushCallbacks[key]) {
                 if(this.pushCallbacks[key].find((o,j)=>{
-                    if(o.idx === idx) {
+                    if(o.idx === sub) {
                         this.pushCallbacks[key].splice(j,1);
                         return true;
                     }
@@ -217,7 +263,6 @@ export class StateManager {
             }
         }
     }
-
 
     unsubscribeAllSequential(key) {
         if(key) {
@@ -230,25 +275,25 @@ export class StateManager {
     }
 
     //Set main onchange response for the property-specific object listener. Don't touch the state
-    setPrimaryKeyResponse(key=null, onchange=null, debug=false) {
+    setPrimaryKeyResponse(key=null, onchange=null, debug=false, startRunning=this.defaultStartListenerEventLoop) {
         if(onchange !== null){
             if(this.listener.hasKey(key)){
                 this.listener.onchange(key, onchange);
             }
             else if(key !== null){
-                this.listener.addListener(key,this.data,key,onchange,this.data["stateUpdateInterval"],debug);
+                this.listener.addListener(key, this.data, key, onchange, this.data["stateUpdateInterval"], debug, startRunning);
             }
         }
     }
 
     //Add extra onchange responses to the object listener for a set property. Use state key for state-wide change responses
-    addSecondaryKeyResponse(key=null, onchange=null, debug=false) {
+    addSecondaryKeyResponse(key=null, onchange=null, debug=false, startRunning=this.defaultStartListenerEventLoop) {
         if(onchange !== null){
             if(this.listener.hasKey(key)){
                 return this.listener.addFunc(key, onchange);
             }
             else if(key !== null){
-                this.listener.addListener(key,this.data,key,()=>{},this.data["stateUpdateInterval"],debug);
+                this.listener.addListener(key, this.data,key,()=>{},this.data["stateUpdateInterval"], debug, startRunning);
                 return this.listener.addFunc(key, onchange);
             }
             else { return this.listener.addFunc("state", onchange);}
@@ -280,7 +325,7 @@ export class StateManager {
     }
 
     //Save the return value to provide as the responseIdx in unsubscribe
-    subscribe(key, onchange) {
+    subscribe(key, onchange, startRunning=true) {
         if(this.data[key] === undefined) {this.addToState(key,null,onchange);}
         else {return this.addSecondaryKeyResponse(key,onchange);}
     }
@@ -293,6 +338,17 @@ export class StateManager {
 
     unsubscribeAll(key) { // Removes the listener for the key (including the animation loop)
         this.clearAllKeyResponses(key);
+    }
+
+    //runs only one animation frame to check all state keys
+    runSynchronousListeners() {
+        this.defaultStartListenerEventLoop = false;
+        this.listener.startSync();
+    }
+
+    //stops the listener event loops without clearing the keys.
+    stop(key=null) {
+        this.listener.stop(key);
     }
 
 }

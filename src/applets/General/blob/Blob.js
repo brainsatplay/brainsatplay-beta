@@ -48,8 +48,7 @@ class Blob{
                     if (this.props.material) { 
                         // this.feedbackHistory.push(user.data)
                         // let updateValue = this.ports.upperBound.data-this.normalize(user.data, Math.min(...this.feedbackHistory), Math.max(...this.feedbackHistory), this.ports.upperBound.data, this.ports.lowerBound.data)
-                        console.error(user.data)
-                        if (isNaN(user.data))this.props.material.uniforms.uNoiseIntensity.value = user.data 
+                        if (!isNaN(user.data)) this.props.material.uniforms.uNoiseIntensity.value = 1 - user.data 
                     } // update blob noise given new feedback samples      
                 },
             },

@@ -263,7 +263,13 @@ export class GraphManager{
 
     updateParams(node,params) {
         
-        for (let param in params) node.ports[param].data = params[param]
+        for (let param in params) {
+            if (param in node.ports) node.ports[param].data = params[param]
+            else {
+                console.error(`A port for '${param}' does not exist on the ${node.label} node.`)
+                console.log(node, param)
+            }
+        }
     }
 
     shallowCopy(input){
@@ -358,15 +364,17 @@ export class GraphManager{
                     result = node.ports['default'].onUpdate(inputCopy)
                 }
 
-                // Handle Promises
-                if (!!result && typeof result.then === 'function'){
-                    result.then((r) =>{
-                        this.checkToPass(node,port,r)
-                    })
-                } else {
-                    this.checkToPass(node,port,result)
-                }
-            }
+                // Pass Results Appropriately
+                if (!result){
+                        if (
+                            node.ports[port].data === undefined 
+                            || ((typeof node.ports[port].data === typeof inputCopy.data) && 'object' !== typeof node.ports[port].data)
+                            || (('object' === typeof node.ports[port].data === typeof inputCopy.data && 'constructor' in node.ports[port].data && 'constructor' in inputCopy.data) && (node.ports[port].data.contructor.name === inputCopy.data.contructor.name))
+                        ) {
+                        node.ports[port].data = inputCopy.data // Set input as output
+                }} else if (!!result && typeof result.then === 'function') result.then((r) =>{this.setPort(node,port,r)}) // Handle Promises
+                else this.setPort(node,port,result) // Pass output forward to next nodesa
+            } 
         } catch (e) { console.log(e)}
 
         // Calculate Latency
@@ -380,7 +388,12 @@ export class GraphManager{
         return node.ports[port]
     }
 
-    checkToPass(node,port,result){
+    setState = (state, result) => {
+        Object.assign(state, result)
+    }
+
+    setPort(node,port,result){
+
         if (result){
             let allEqual = true
             let forced = false
@@ -390,14 +403,11 @@ export class GraphManager{
 
             // result.forEach((o,i) => {
 
-            let setState = (state, result) => {
-                Object.assign(state, result)
-            }
 
                 // Check if Forced Update
                 if (result.forceUpdate) {
                     forced = true
-                    setState(node.ports[port],result)
+                    this.setState(node.ports[port],result)
                 }
 
                 // Otherwise Check If Current State === Previous State
@@ -416,11 +426,11 @@ export class GraphManager{
                             let thisEqual = case1 === case2
 
                             if (!thisEqual){
-                                setState(node.ports[port],result)
+                                this.setState(node.ports[port],result)
                                 allEqual = false
                             }
                     } else {
-                        setState(node.ports[port],result)
+                        this.setState(node.ports[port],result)
                         allEqual = false
                     }
             }
@@ -430,8 +440,8 @@ export class GraphManager{
                 let updateObj = {}
                 let label = this.getLabel(node,port)
                 updateObj[label] = {trigger:true}
-                if (stringify) updateObj[label].value = JSON.parse(JSON.stringifyFast(node.ports[port])) // Do not send huge objects
-                node.stateUpdates.manager.setState(updateObj, false)
+                if (stringify) updateObj[label].value = JSON.parse(JSON.stringifyFast(node.states[port][0])) // Do not send huge objects
+                node.stateUpdates.manager.setState(updateObj);
             }
         }
     }
@@ -510,7 +520,7 @@ export class GraphManager{
     addPortToRegistry = (node,port) => {
         this.registry.local[node.label].registry[port] = {}
         this.registry.local[node.label].registry[port].state = node.ports[port]
-        this.registry.local[node.label].registry[port].callbacks = []
+        // this.registry.local[node.label].registry[port].callbacks = []
     }
 
     instantiateNodePort = (node, port) => {
@@ -713,6 +723,7 @@ export class GraphManager{
             this.state.data[label] = this.registry.local[sourceName].registry[sourcePort].state
 
             // Register Brainstorm State
+            let brainstormSource = source instanceof this.plugins.networking.Brainstorm
             let brainstormTarget = target instanceof this.plugins.networking.Brainstorm
             if (brainstormTarget) {
                 applet.streams.add(label) // Keep track of streams
@@ -759,7 +770,6 @@ export class GraphManager{
 
             // Send Last State to New Edge Target
             let sendFunction = () => {
-
                 // Add Default Metadata
                 // console.log(input)
                 if (input.meta == null) input.meta = {}
@@ -769,11 +779,10 @@ export class GraphManager{
                 this.runSafe(target, targetPort, input, true)
             }
 
-            // console.log(input, forceSend, hasData, lastStateSent, isElement, sendOutput)
-            if (sendOutput && isElement) sendFunction() // If new connection must pass an element
+            if (sendOutput && (brainstormTarget || isElement)) sendFunction() // If new connection must pass (1) an element, or (2) anything to the Brainstorm
             else if (
-                // brainstormTarget || 
-                ((forceSend || hasData) && !lastStateSent)) return sendFunction // Else if there is data on initialization
+                (!brainstormSource) && 
+                (brainstormTarget || ((forceSend || hasData) && !lastStateSent))) return sendFunction // Else if there is data on initialization
         }
     }
 

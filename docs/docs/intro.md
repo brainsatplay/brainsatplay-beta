@@ -5,10 +5,16 @@ hide_title: true
 
 ![Brains@Play Header](../static/img/header.png)
 
-## Welcome to Brains@Play
+## Welcome to The Biosensing Game
 ---
 
-**[brainsatplay.js](https://github.com/brainsatplay/brainsatplay) is an open-source library that allows you to leverage biosignals for data collection, feedback, and control in modern web applications.** Check out [The Brains@Play Platform](https://app.brainsatplay.com) to browse apps built by and for our community.
+**[Brains@Play](https://app.brainsatplay.com) is an open-source citizen science framework that allows anyone to leverage biosignals for data collection, feedback, and control in modern web applications.** Check out our  [main Github repository](https://github.com/brainsatplay/brainsatplay) to give into the codebase.
+
+<!-- ADD A HIGHLIGHT REEL VIDEO -->
+
+1. Platform (https://app.brainsatplay.com)
+2. Studio (https://app.brainsatplay.com/#studio)
+3. Library (https://github.com/brainsatplay/brainsatplay)
 
 
 ## Our Ethos

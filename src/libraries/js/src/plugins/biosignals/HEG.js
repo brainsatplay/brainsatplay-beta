@@ -25,7 +25,9 @@ export class HEG{
                 edit: false,
                 input: {type:null},
                 output: {type: Object, name: 'DataAtlas'},
-                data: this.session.atlas.data
+                onUpdate: () =>{
+                    return {data: this.session.atlas.data}
+                }
             }
         }
 

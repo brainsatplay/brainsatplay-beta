@@ -167,6 +167,7 @@ export class Neurofeedback{
     
                 try {
     
+                    console.error(user.data)
                     let type = this.props.feedbackInfo[this.ports.metric.data].type
                     if (type === 'custom'){ // takes whole data array
                         user.data = this.props.feedbackInfo[this.ports.metric.data].function(data) ?? 0 

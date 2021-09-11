@@ -8,7 +8,23 @@ export class Blink{
     constructor(label, session, params={}) {
         this.label = label
         this.session = session
-        
+
+
+        this.props = {
+            id: String(Math.floor(Math.random() * 1000000)),
+            canvas: null,
+            looping: false,
+            dataquality: null,
+            blinkData: {},
+            tags: {
+                left: ['AF7','FP1'],
+                right: ['AF8','FP2']
+            },
+            container: document.createElement('div')
+        }
+
+        this.props.container.id = this.props.id
+        this.props.container.style = 'display: flex; align-items: center; justify-content: center; width: 100%; height: 150px;'
 
         this.ports = {
             default: {
@@ -37,6 +53,11 @@ export class Blink{
                 }
             },
 
+            element: {
+                data: this.props.container,
+                input: {type: null},
+                output: {type: Element},
+            },
 
             model: {
                 data: 'Threshold', 
@@ -82,18 +103,6 @@ export class Blink{
             }
         }
 
-        this.props = {
-            id: String(Math.floor(Math.random() * 1000000)),
-            canvas: null,
-            looping: false,
-            dataquality: null,
-            blinkData: {},
-            tags: {
-                left: ['AF7','FP1'],
-                right: ['AF8','FP2']
-            }
-        }
-
         // Dependencies
         this.analysis = new Set()
         this.props.dataquality = this.session.atlas.graph.instantiateNode({id: 'dataquality', class: DataQuality, params: {method: 'Mean Amplitude'}}, this.session)
@@ -109,14 +118,7 @@ export class Blink{
     init = () => {
         this.props.looping = true
 
-        let HTMLtemplate = () => {
-            return `
-            <div id='${this.props.id}' style='display: flex; align-items: center; justify-content: center; width: 100%; height: 150px;'>
-            </div>`
-        }
-
-        let setupHTML = (app) => {
-            this.props.container = document.getElementById(`${this.props.id}`);
+        // let setupHTML = (app) => {
             this.props.canvas.instance.init()
             this.props.container.insertAdjacentElement('beforeend', this.props.canvas.instance.props.container)
 
@@ -136,9 +138,9 @@ export class Blink{
                     }}
                 }
             )
-        }
+        // }
 
-        return { HTMLtemplate, setupHTML}
+        // return { HTMLtemplate, setupHTML}
     }
 
     deinit = () => {
